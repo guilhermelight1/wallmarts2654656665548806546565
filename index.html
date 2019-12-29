@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css?family=Raleway" rel='stylesheet' type='text/css'>
+<style>
+
+body {
+  font-size: 18px;
+  font-family: 'Raleway', sans-serif;
+}
+
+p {
+  color: #dbdbdb;
+  margin: 50px;
+}
+
+a {
+  color: #4FDEF2;
+}
+
+.axis {
+  fill: gray;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+}
+
+.axis .halo {
+  stroke: gray;
+  stroke-width: 4px;
+  stroke-linecap: round;
+}
+
+.slider .handle path {
+  stroke: black;
+  stroke-width: 3px;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+.slider .handle text {
+  fill: black;
+  text-align: center;
+  font-size: 18px;
+}
+  
+path {
+  stroke-linejoin: round;
+}
+
+.land {
+  fill: #b8b8b8;
+}
+
+.states {
+  fill: none;
+  stroke: #fff;
+}
+
+.voronoi {
+  fill: none;
+  stroke: brown;
+  stroke-width: .5px;
+}
+
+.area {
+  fill: steelblue;
+}
+  
+button.play {
+  cursor: pointer;
+  position: absolute;
+  padding: 5px 10px;
+  border-radius: 5px;
+  border: solid 1px #ccc;
+  color: #333;
+  background: #fff;
+  top: 452px;
+  left: 400px;
+  font-family: 'Raleway', sans-serif;
+}
+
+  
+</style>
+<body>
+<script src="//d3js.org/d3.v3.min.js"></script>
+<script src="//d3js.org/queue.v1.min.js"></script>
+<script src="//d3js.org/topojson.v1.min.js"></script>
+<script>
+
+
+var margin = {top: 10, right: 10, bottom: 10, left: 10},
+    width = 960 - margin.left - margin.right,
+    height = 500 - margin.bottom - margin.top,
+    sliderPosition = {top: height - 50, left: width / 2 + 10, 
+                      height: 40, width: width / 2 - 30},
+    areaHeight = 100,
+    mapScale = 900,
+    mapTranslate = [480, 200],
+    startingValue = 1961;
+	
+  
+// sets scale for slider
+var x = d3.scale.linear()
+    .range([0, sliderPosition.width])
+    .clamp(true);
+   
+var y = d3.scale.linear()
+    .range([0, areaHeight]);
+  
+var svg = d3.select("body").append("svg")
+    .attr("width", width + margin.left + margin.right)
+    .attr("height", height + margin.top + margin.bottom)
+  .append("g")
+  // classic transform to position g
+    .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+var button = d3.select("body").append("button")
+  .attr("class", "play")
+  .text("▶ Play")
+  
+var gArea = svg.append("g")
+	.attr("class", "area-chart")
+	.attr("transform", "translate(" + sliderPosition.left + ","
+      + (sliderPosition.top + sliderPosition.height / 2 - areaHeight) + ")")
+	.append("path")
+  .attr("class", "area")
+  .attr("clip-path", "url(#clipRect)");
+  
+var clipRect = svg.append("clipPath")
+    .attr("id", "clipRect")
+	.append("rect")
+    .attr("width", sliderPosition.width)
+    .attr("height", areaHeight);
+
+//// Begin Slider Code 
+    
+// defines brush
+var brush = d3.svg.brush()
+    .x(x)
+    .extent([startingValue, startingValue])
+    //.on("brush", brushed);
+
+var sliderBox = svg.append("g")
+		.attr("class", "slider-box")
+		.attr("transform", "translate(" + sliderPosition.left + ","
+         														+ sliderPosition.top + ")")
+		.attr("height", sliderPosition.height)
+		.attr("width", sliderPosition.width);
+	
+
+var slider = sliderBox.append("g")
+    .attr("class", "slider")
+    .call(brush);
+
+slider.selectAll(".extent,.resize")
+    .remove();
+
+slider.select(".background")
+    .attr("height", height);
+
+var handle = slider.append("g")
+    .attr("class", "handle")
+
+handle.append("path")
+    .attr("transform", "translate(0," + sliderPosition.height / 2 + ")")
+    .attr("d", "M 0 -20 V 5")
+
+handle.append('text')
+	.attr("class", "year")
+  .text(startingValue)
+  .attr("text-anchor", "middle")
+  .attr("transform", "translate(0," + (sliderPosition.height / 2 + 25) + ")");
+
+handle.append('text')
+	.attr("class", "count")
+  .text(0)
+  .attr("text-anchor", "middle")
+  .attr("transform", "translate(0," + (-100) + ")");
+
+var area = d3.svg.area()
+    .x(function(d) { return x(+d.opening_date); })
+    .y0(height)
+    .y1(function(d) { return y(d.close); });
+
+//// End Slider Code
+  
+//// Begin Map Code
+  
+var projection = d3.geo.albers()
+		.scale(mapScale)
+		.translate(mapTranslate);
+  
+var path = d3.geo.path()
+    .projection(projection)
+    .pointRadius(1.5);
+
+var points;
+  
+queue()
+    .defer(d3.json, "us.json")
+    .defer(d3.tsv, "walmarts.tsv")
+    .await(ready);
+
+function getPoints(data){
+  return data.map(function(d){
+    return {0: d.longitude, 1: d.latitude}
+  });
+}
+  
+function ready(error, us, walmarts) {
+  if (error) throw error;
+
+  walmarts.forEach(function(d){
+    d.opening_date = +d.opening_date,
+    d.latitude = +d.latitude,
+    d.longitude = +d.longitude,
+    d.projected_xy = projection([d.longitude, d.latitude])
+  })
+  
+  var total = d3.nest()
+  	.key(function(d){ return d.opening_date; })
+		.rollup(function(d) { return d.length; })
+		.entries(walmarts);
+  
+  // get a running total
+  total[0].values_cum = total[0].values;
+  for (var i = 1; i < total.length; i++){
+  	total[i].values_cum = total[i-1].values_cum + total[i].values; 
+  }
+  
+  x.domain([d3.min(walmarts, function(d){ return d.opening_date; }) - 1,
+            d3.max(walmarts, function(d){ return d.opening_date; })]);
+  
+  y.domain([d3.max(total, function(d){ return d.values_cum; }), 0]);
+  
+  var area = d3.svg.area()
+    .x(function(d) { return x(d.key); })
+    .y0(y(0))
+    .y1(function(d) { return y(d.values_cum); });
+  
+  gArea.datum(total)
+      .attr("d", area);
+    
+  svg.append("path")
+      .datum(topojson.feature(us, us.objects.land))
+      .attr("class", "land")
+      .attr("d", path);
+
+  svg.append("path")
+      .datum(topojson.mesh(us, us.objects.states, function(a, b) { return a !== b; }))
+      .attr("class", "states")
+      .attr("d", path);
+  
+  sliderBox.append("g")
+    .attr("class", "x axis")
+    // put in middle of screen
+    .attr("transform", "translate(0," + sliderPosition.height / 2 + ")")
+    // inroduce axis
+    .call(d3.svg.axis()
+      .scale(x)
+      .orient("bottom")
+      .tickFormat(function(d) { return d; })
+      .tickSize(0)
+      .tickPadding(12)
+      .tickValues(x.domain()))
+  .select(".domain")
+  .select(function() {
+    return this.parentNode.appendChild(this.cloneNode(true)); 
+  })
+  .attr("class", "halo");
+
+  console.log(total);
+  
+  function brushed() {
+    var value = brush.extent()[0];
+
+    if (d3.event.sourceEvent) { // not a programmatic event
+      handle.select('text');
+      value = x.invert(d3.mouse(this)[0]);
+      brush.extent([value, value]);
+    }
+
+    clipRect.attr("width", x(value));
+    
+    
+    var toDate = total.filter(function(d){ return d.key <= value; });
+    var latest = toDate[toDate.length - 1];
+    if (typeof latest === "undefined"){
+      latest = {},
+      latest.values_cum = 0;
+    }
+    console.log( y(latest.values_cum) - y.range()[1]);
+    
+    handle.select("path")
+      .attr("d", "M 0 " + (y(latest.values_cum) - y.range()[1] - 5) + " V 5");
+    
+    points = svg.selectAll("circle.point")
+        .data(walmarts.filter(function(d){ 
+          return d.opening_date <= value; 
+        })) 
+
+    points.enter().append("circle")          
+        .attr("class", "point")
+        .attr("cx", function(d){ return d.projected_xy[0]; })
+        .attr("cy", function(d){ return d.projected_xy[1]; })
+    		.attr("fill", "#007dc6")
+    		.attr("r", 0.01)
+    	.transition().duration(500)
+        .attr("r", 3)
+    	.transition().duration(500)
+    		.attr("r", 1);
+
+    points.exit().transition().duration(500)
+      .attr("r", 0)
+    	.remove();
+
+    handle.attr("transform", "translate(" + x(value) + ",0)");
+    handle.select('text.year').text(Math.floor(value));
+    handle.select('text.count')
+      .attr("transform", "translate(0," + (y(latest.values_cum) - y.range()[1] - 5) + ")")
+      .text(latest.values_cum);
+    
+  }
+
+  brush.on("brush", brushed);
+  button.on("click", playAnimation);
+  
+  function playAnimation(){
+    button.transition()
+    	.delay(500)
+    	.duration(500)
+      .style("opacity", 0)
+    
+    slider
+      .call(brush.extent([1961, 1961]))
+      .call(brush.event)
+    .transition() // gratuitous intro!
+      .ease("linear")
+      .delay(500)
+      .duration(10000)
+      .call(brush.extent([2006, 2006]))
+      .call(brush.event)
+    .transition()
+    	.call(endAnimation);
+    
+  }
+  
+  function endAnimation(){
+    button.transition()
+    	.delay(10500)
+      .duration(500)
+      .style("opacity", 1)
+  }
+  
+  slider
+      .call(brush.extent([2006, 2006]))
+  		.call(brush.event)
+    
+  playAnimation();
+}
+  
+//// End Map Code
+  
+  
+</script>
